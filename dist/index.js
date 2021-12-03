@@ -376,6 +376,7 @@ const {
 	getChangelogItems,
 	getDevNoteItems,
 } = __webpack_require__( 2450 );
+const attachChangelogToRelease = __webpack_require__( 6593 );
 
 /**
  * @typedef {import('../../typedefs').GitHubContext} GitHubContext
@@ -471,6 +472,7 @@ const branchHandler = async ( context, octokit, config ) => {
 		);
 		changelog = await getChangelog( changelogItems, config );
 		devNoteItems = getDevNoteItems( changelogItems, config );
+		await attachChangelogToRelease( context, octokit, changelog );
 	} catch ( e ) {
 		core.debug( `Error ${ e }` );
 		// @todo Handle re-attempting creation of changelog after resolving error.
@@ -752,6 +754,67 @@ module.exports = {
 
 /***/ }),
 
+/***/ 4162:
+/***/ ((__unused_webpack_module, exports, __webpack_require__) => {
+
+/**
+ * External dependencies
+ */
+const core = __webpack_require__( 2186 );
+
+/**
+ * Internal dependencies
+ */
+const { getTemplate, TEMPLATES, compile } = __webpack_require__( 1274 );
+const { lineBreak } = __webpack_require__( 1606 );
+const debug = __webpack_require__( 5800 );
+const {
+	getReleaseVersion,
+	isPatchRelease,
+	getReleaseBranch,
+	duplicateChecker,
+	hasMilestone: getHasMilestone,
+} = __webpack_require__( 3723 );
+const {
+	getChangelog,
+	getChangelogItems,
+	getDevNoteItems,
+} = __webpack_require__( 2450 );
+const attachChangelogToRelease = __webpack_require__( 6593 );
+
+/**
+ * @typedef {import('../../typedefs').GitHubContext} GitHubContext
+ * @typedef {import('../../typedefs').GitHub} GitHub
+ * @typedef {import('../../typedefs').ReleaseConfig} ReleaseConfig
+ */
+
+/**
+ * @param {GitHubContext} context
+ * @param {GitHub} octokit
+ * @param {ReleaseConfig} config
+ */
+const releaseHandler = async ( context, octokit, config ) => {
+	core.debug(
+		'Received config in branchHandler: ' + JSON.stringify( config )
+	);
+	// get release version.
+	const releaseVersion = getReleaseVersion( context.release.name );
+
+	const changelogItems = await getChangelogItems(
+		context,
+		octokit,
+		releaseVersion,
+		config
+	);
+	const changelog = await getChangelog( changelogItems, config );
+	await attachChangelogToRelease( context, octokit, changelog );
+};
+
+exports.releaseHandler = releaseHandler;
+
+
+/***/ }),
+
 /***/ 6484:
 /***/ ((module, __unused_webpack_exports, __webpack_require__) => {
 
@@ -765,6 +828,7 @@ const { setFailed, debug: coreDebug } = __webpack_require__( 2186 );
  * Internal dependencies
  */
 const branchCreateHandler = __webpack_require__( 462 );
+const { releaseHandler } = __webpack_require__( 4162 );
 
 /**
  * @typedef {import('@actions/github').GitHub} GitHub
@@ -775,6 +839,7 @@ const branchCreateHandler = __webpack_require__( 462 );
 
 const runnerMatrix = {
 	create: branchCreateHandler,
+	release: releaseHandler,
 };
 
 /**
@@ -943,6 +1008,34 @@ module.exports = {
 	},
 	compile: ( contents ) => handlebars.compile( contents, { noEscape: true } ),
 };
+
+
+/***/ }),
+
+/***/ 6593:
+/***/ ((module, __unused_webpack_exports, __webpack_require__) => {
+
+const debug = __webpack_require__( 5800 );
+
+const attachChangelogToRelease = async ( context, octokit, changelog ) => {
+	const releases = await octokit.repos.listReleases( {
+		...context.repo,
+	} );
+
+	if ( releases.data.length === 0 ) {
+		debug(
+			`releaseAutomation: No releases found for ${ context.repo.owner }/${ context.repo.repo }`
+		);
+	} else {
+		await octokit.repos.updateRelease( {
+			...context.repo,
+			release_id: releases.data[ 0 ].id,
+			body: changelog,
+		} );
+	}
+};
+
+module.exports = attachChangelogToRelease;
 
 
 /***/ }),
